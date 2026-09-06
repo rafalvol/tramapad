@@ -1,0 +1,703 @@
+1. Stack de Interface Gráfica (GUI)
+
+PyQt6 ou PySide6 (Recomendado): É a melhor opção para esse projeto. Oferece o componente QTextEdit (que possui suporte nativo a Markdown, navegação de cursor rápida e suporte a temas) e o QSplitter, que permite criar a barra lateral retrátil dividindo a tela de forma fluida. O resultado visual fica idêntico a um aplicativo nativo desktop.
+
+2. Estrutura de Arquivos e Armazenamento do Projeto
+
+Para manter a filosofia de "arquivo simples", o TramaPad pode salvar o projeto do escritor de duas formas:
+
+Opção A — Arquivo Único .trama (JSON compacto): O arquivo .trama é apenas um JSON renomeado que guarda todo o projeto em um só lugar.
+Opção B — Pasta do Projeto (Textos + JSON): Salva os capítulos como arquivos .txt ou .md comuns em uma pasta invisível e usa um arquivo de metadados para as fichas de personagens.
+
+3. Bibliotecas Auxiliares Recomendadas
+
+watchdog: Para detectar alterações nos arquivos e garantir salvamento automático em segundo plano sem travar a interface.
+
+python-docx: Para exportar os capítulos compilados diretamente em formato .docx (Microsoft Word) quando o escritor terminar.
+
+PyInstaller ou Nuitka: Para empacotar todo o código Python em um executável único (.exe para Windows, .dmg para macOS ou executável para Linux) sem que o usuário final precise ter o Python instalado.
+
+4. Arquitetura Mínima do Código (Estrutura de Pastas)
+
+tramapad_project/
+│
+├── main.py
+│
+├── ui/
+│   ├── main_window.py
+│   ├── editor.py
+│   ├── sidebar.py
+│   └── dialogs.py
+│
+├── core/
+│   ├── project.py
+│   ├── chapter.py
+│   ├── character.py
+│   └── location.py
+│
+├── database/
+│   └── database.py
+│
+├── services/
+│   ├── autosave.py
+│   ├── search.py
+│   ├── export.py
+│   └── backup.py
+│
+└── resources/
+    ├── icons/
+    └── themes/
+
+---
+
+Acho que podemos estruturar o **TramaPad** com uma filosofia bastante clara:
+
+> **A simplicidade de um bloco de notas, mas com a estrutura necessária para escrever uma obra inteira.**
+
+A referência não seria "um Word simplificado", mas **um editor de texto que sabe que o texto pertence a um projeto literário**.
+
+## 1. Conceito visual
+
+Interface extremamente limpa.
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ TramaPad   Meu Romance                         ···    ⚙      │
+├───────────┬──────────────────────────────────────────────────┤
+│           │                                                  │
+│ CAPÍTULOS │                    Capítulo 7                     │
+│           │                                                  │
+│ 01  O início│    A chuva começou antes do amanhecer.         │
+│ 02  A viagem│                                                  │
+│ 03  Curitiba│    João ficou algum tempo olhando pela janela, │
+│ 04  O encontro│  tentando entender por que aquela sensação  │
+│ 05  ...    │    não o abandonava.                            │
+│           │                                                  │
+│ + Capítulo│                                                  │
+│           │                                                  │
+│ PERSONAGENS│                                                  │
+│ João      │                                                  │
+│ Maria     │                                                  │
+│ Pedro     │                                                  │
+│           │                                                  │
+├───────────┴──────────────────────────────────────────────────┤
+│ 1.842 palavras                         Autosave ✓   32 min    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Mas **a barra lateral poderia ficar escondida**.
+
+O estado padrão poderia ser ainda mais próximo do Bloco de Notas:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ TramaPad                                      ☰       ⚙       │
+│                                                              │
+│                                                              │
+│                    Capítulo 7                                │
+│                                                              │
+│ A chuva começou antes do amanhecer.                          │
+│                                                              │
+│ João ficou algum tempo olhando pela janela...                │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│ 1.842 palavras                                  Autosave ✓    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**A interface deve desaparecer quando não for necessária.**
+
+---
+
+# 2. Estrutura principal
+
+Eu dividiria o TramaPad em apenas **quatro áreas conceituais**:
+
+### Escrita
+
+O editor propriamente dito.
+
+### Projeto
+
+Capítulos, estrutura da obra e metadados.
+
+### Mundo
+
+Personagens, lugares, objetos, eventos etc.
+
+### Pesquisa
+
+Busca dentro de toda a obra.
+
+Isso evita criar dezenas de menus.
+
+---
+
+# 3. Tela inicial
+
+Ao abrir o programa:
+
+```text
+TRAMAPAD
+
+┌───────────────────────────┐
+│                           │
+│       Meus projetos       │
+│                           │
+│  📖 O inverno             │
+│     Última edição: hoje   │
+│                           │
+│  📖 Meu romance          │
+│     Última edição: ontem  │
+│                           │
+│                           │
+│       + Novo projeto      │
+│                           │
+└───────────────────────────┘
+```
+
+Também:
+
+**Abrir projeto**
+
+Isso é tudo.
+
+Nada de dashboard cheio de gráficos.
+
+---
+
+# 4. O projeto
+
+Quando o usuário cria:
+
+> **Novo projeto**
+
+o TramaPad pergunta somente:
+
+```text
+Nome:
+[ Meu Romance                    ]
+
+Tipo:
+○ Romance
+○ Conto
+○ Poesia
+○ Roteiro
+○ Outro
+
+[ Criar ]
+```
+
+O tipo poderia inclusive ser apenas um **metadado**, sem bloquear funcionalidades.
+
+---
+
+# 5. Editor
+
+Aqui está o coração do programa.
+
+Eu faria algo deliberadamente próximo do Bloco de Notas.
+
+### Por padrão:
+
+* fonte confortável;
+* largura de texto limitada;
+* fundo limpo;
+* sem barra de ferramentas;
+* sem formatação pesada;
+* sem menus ocupando espaço;
+* salvamento automático.
+
+### Atalhos
+
+```text
+Ctrl + N       Novo capítulo
+Ctrl + S       Salvar
+Ctrl + F       Pesquisar
+Ctrl + Shift + F   Pesquisar no projeto
+Ctrl + P       Modo foco
+Ctrl + Z       Desfazer
+```
+
+E talvez:
+
+**F11 → tela cheia**
+
+---
+
+# 6. Capítulos
+
+A barra lateral seria essencialmente um navegador.
+
+```text
+CAPÍTULOS
+
+01  O começo
+02  A viagem
+03  Curitiba
+04  O encontro
+05  A descoberta
+06  —
+07  A chuva
+
++ Novo capítulo
+```
+
+Cada capítulo poderia ter:
+
+* título;
+* número;
+* status;
+* palavras;
+* data de criação/modificação;
+* POV;
+* personagens;
+* localização;
+* período temporal.
+
+Mas **essas informações ficariam escondidas durante a escrita**.
+
+---
+
+# 7. Informações do capítulo
+
+Clicando em um pequeno ícone ao lado do título:
+
+```text
+CAPÍTULO 7
+
+Título
+A chuva
+
+POV
+João
+
+Local
+Curitiba
+
+Data
+14/09/2026
+
+Horário
+08:30
+
+Status
+● Primeiro rascunho
+
+Personagens
+João
+Maria
+
+Notas
+João ainda não sabe sobre o acidente.
+```
+
+Isso é exatamente o tipo de informação que diferencia o TramaPad de um editor de texto comum.
+
+---
+
+# 8. Personagens
+
+Uma seção própria:
+
+```text
+PERSONAGENS
+
+🔎 Pesquisar
+
+João Silva
+Maria Oliveira
+Pedro Santos
+Ana
+```
+
+Ao selecionar João:
+
+```text
+JOÃO SILVA
+
+Descrição
+Jornalista, reservado...
+
+Idade
+34
+
+Características
+Alto
+Introvertido
+...
+
+Relacionamentos
+
+Maria
+Irmã
+
+Pedro
+Amigo
+
+APARIÇÕES
+
+Cap. 1
+Cap. 3
+Cap. 4
+Cap. 7
+```
+
+E **as aparições poderiam ser geradas automaticamente** a partir do texto.
+
+---
+
+# 9. Lugares
+
+Mesma lógica:
+
+```text
+LUGARES
+
+Curitiba
+Casa de João
+Redação do jornal
+Restaurante Aurora
+```
+
+E:
+
+```text
+RESTAURANTE AURORA
+
+Descrição
+Pequeno restaurante...
+
+Localização
+Centro
+
+APARIÇÕES
+
+Cap. 3
+Cap. 7
+```
+
+---
+
+# 10. Notas
+
+Aqui eu faria algo deliberadamente simples.
+
+Não tentaria criar um sistema complexo de gerenciamento de conhecimento.
+
+```text
+NOTAS
+
++ Nova nota
+
+Ideias
+- João deveria descobrir...
+
+Pesquisa
+- Como funciona...
+
+Cenas
+- Cena do aeroporto
+
+Perguntas
+- Por que Maria mentiu?
+```
+
+Uma nota pode simplesmente ser:
+
+```text
+┌──────────────────────────────┐
+│ Cena do aeroporto            │
+│                              │
+│ João encontra Maria antes    │
+│ de embarcar.                 │
+│                              │
+└──────────────────────────────┘
+```
+
+---
+
+# 11. Pesquisa
+
+Essa talvez seja uma das funcionalidades mais importantes.
+
+**Ctrl + Shift + F**
+
+```text
+Pesquisar no projeto
+
+[ Maria                         ]
+
+Resultados:
+
+CAPÍTULO 2
+"...Maria olhou para..."
+
+CAPÍTULO 4
+"...João encontrou Maria..."
+
+CAPÍTULO 7
+"...Maria estava sentada..."
+```
+
+E a pesquisa poderia abranger:
+
+**Texto + capítulos + personagens + lugares + notas.**
+
+---
+
+# 12. Corretor ortográfico
+
+Como discutimos:
+
+```text
+João enchergou Maria.
+     ────────
+```
+
+Clique:
+
+> enxergou
+
+E nada além disso.
+
+Sem pop-ups constantes.
+
+---
+
+# 13. Metadados da obra
+
+No nível do projeto:
+
+```text
+MEU ROMANCE
+
+Título:
+O inverno
+
+Autor:
+...
+
+Gênero:
+Romance
+
+Status:
+Primeiro rascunho
+
+Palavras:
+83.421
+
+Capítulos:
+24
+
+Personagens:
+17
+
+Locais:
+12
+
+Data de início:
+03/04/2026
+```
+
+Isso pode ser útil, mas ficaria **fora do caminho da escrita**.
+
+---
+
+# 14. Estatísticas
+
+Eu manteria extremamente simples.
+
+Na barra inferior:
+
+> **1.842 palavras · 32 min · 2.000 meta**
+
+E uma tela opcional:
+
+```text
+ESTATÍSTICAS
+
+Hoje
+1.842 palavras
+
+Esta semana
+8.423 palavras
+
+Projeto
+83.421 palavras
+
+Capítulos
+24
+
+Média
+3.476 palavras/capítulo
+```
+
+Nada de transformar o programa em um aplicativo de produtividade.
+
+---
+
+# 15. Histórico
+
+Uma funcionalidade que eu considero **muito importante para escritores**:
+
+> **Histórico do capítulo**
+
+Por exemplo:
+
+```text
+HISTÓRICO
+
+Hoje
+14:32
+14:17
+13:51
+
+Ontem
+21:43
+20:15
+```
+
+Clicou em uma versão:
+
+```text
+Restaurar esta versão
+```
+
+Isso reduz muito o medo de apagar alguma coisa.
+
+---
+
+# 16. Temas
+
+Como você especificou, eu deixaria **somente três**:
+
+### Claro
+
+```text
+Branco
+Texto escuro
+```
+
+### Escuro
+
+```text
+Fundo escuro
+Texto claro
+```
+
+### Sistema
+
+Segue automaticamente Windows/Linux/macOS.
+
+Sem:
+
+* temas coloridos;
+* temas "papel";
+* temas personalizados;
+* dezenas de opções.
+
+Isso é coerente com a filosofia do produto.
+
+---
+
+# 17. Uma característica que eu considero fundamental
+
+### **Modo Foco**
+
+Ao ativá-lo:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│                                                              │
+│                                                              │
+│                  Capítulo 7                                  │
+│                                                              │
+│ A chuva começou antes do amanhecer.                          │
+│                                                              │
+│ João ficou algum tempo olhando pela janela...                │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Nada de sidebar.
+
+Nada de menus.
+
+Nada de estatísticas.
+
+Nada de notificações.
+
+Apenas **a página**.
+
+Pressiona `Esc` e tudo volta.
+
+---
+
+# 18. O princípio arquitetural do TramaPad
+
+Eu resumiria o projeto em três níveis:
+
+```text
+                         TRAMAPAD
+                            │
+             ┌──────────────┴──────────────┐
+             │                             │
+          ESCREVER                      ORGANIZAR
+             │                             │
+        ┌────┴────┐               ┌────────┼────────┐
+        │         │               │        │        │
+      Texto     Foco          Capítulos Personagens Notas
+                                      │
+                                  Lugares
+                                      │
+                                   Eventos
+```
+
+E existe uma regra importante:
+
+> **Organização deve estar disponível, mas nunca exigir atenção.**
+
+Isso, para mim, é o que diferencia o TramaPad de um simples editor de texto.
+
+---
+
+## O MVP que eu realmente construiria
+
+Não começaria com tudo isso.
+
+**Versão 0.1:**
+
+1. Criar projeto
+2. Abrir projeto
+3. Criar capítulos
+4. Editor de texto
+5. Salvar automaticamente
+6. Contagem de palavras
+7. Pesquisa
+8. Modo foco
+9. Três temas
+10. Exportar/importar Markdown
+
+Depois:
+
+**0.2 → personagens + lugares + notas**
+
+**0.3 → metadados + relacionamentos + histórico**
+
+**0.4 → corretor ortográfico**
+
+**0.5 → linha do tempo + recursos mais inteligentes**
+
+Isso permitiria que você tivesse um **TramaPad funcional relativamente cedo**, sem passar meses construindo funcionalidades antes de poder experimentar a experiência de escrita.
+
+E há uma decisão que eu considero particularmente importante para o projeto: **o TramaPad deveria ser local-first**. O livro ficaria no computador do escritor, em arquivos que ele possa acessar diretamente, sem exigir conta, internet ou servidor. Sincronização em nuvem poderia vir posteriormente como recurso opcional.
