@@ -86,6 +86,61 @@ def listar_projetos():
     return linhas
 
 
+# ---------- Helpers básicos de capítulo (CRUD mínimo, expandido na Etapa 3) ----------
+
+def criar_capitulo(projeto_id: int, titulo: str, ordem: int = 0) -> int:
+    conn = conectar()
+    ts = agora()
+    cursor = conn.execute(
+        "INSERT INTO capitulos (projeto_id, titulo, conteudo, ordem, atualizado_em) "
+        "VALUES (?, ?, '', ?, ?)",
+        (projeto_id, titulo, ordem, ts)
+    )
+    conn.commit()
+    capitulo_id = cursor.lastrowid
+    conn.close()
+    return capitulo_id
+
+
+def buscar_capitulo(capitulo_id: int):
+    conn = conectar()
+    linha = conn.execute(
+        "SELECT * FROM capitulos WHERE id = ?", (capitulo_id,)
+    ).fetchone()
+    conn.close()
+    return linha
+
+
+def atualizar_conteudo_capitulo(capitulo_id: int, conteudo: str):
+    """Usado pelo AutosaveManager a cada disparo do debounce."""
+    conn = conectar()
+    conn.execute(
+        "UPDATE capitulos SET conteudo = ?, atualizado_em = ? WHERE id = ?",
+        (conteudo, agora(), capitulo_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def obter_ou_criar_capitulo_padrao() -> int:
+    """
+    Placeholder temporário para a Etapa 2: sem sidebar de projetos ainda,
+    o editor precisa de *algum* capítulo para salvar.
+
+    Na Etapa 3 isso é substituído pela seleção real do usuário na árvore
+    de projetos/capítulos — remover esta função quando aquela UI existir.
+    """
+    conn = conectar()
+    linha = conn.execute("SELECT id FROM capitulos ORDER BY id LIMIT 1").fetchone()
+    conn.close()
+
+    if linha:
+        return linha["id"]
+
+    projeto_id = criar_projeto("Sem título")
+    return criar_capitulo(projeto_id, "Capítulo 1", ordem=0)
+
+
 # ---------- Helpers básicos de config ----------
 
 def get_config(chave: str, padrao=None):
