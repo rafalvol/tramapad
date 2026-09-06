@@ -1,8 +1,11 @@
-from PySide6.QtWidgets import QApplication, QMainWindow
+import sys
+from PySide6.QtWidgets import QApplication
+from ui.main_window import MainWindow
+from core.database import criar_tabelas
 
-app = QApplication([])
-window = QMainWindow()
-window.setWindowTitle('TramaPad')
+criar_tabelas()
+
+app = QApplication(sys.argv)
+window = MainWindow()
 window.show()
-app.exec()
-
+sys.exit(app.exec())
