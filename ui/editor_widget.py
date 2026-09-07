@@ -60,18 +60,18 @@ class EditorWidget(QPlainTextEdit):
         caracteres = len(texto)
         self.wordCountChanged.emit(palavras, caracteres)
 
-    def carregar_conteudo(self, texto: str):
+    def carregar_conteudo(self, texto: str, posicao_cursor: int = 0):
         """
-        Define o texto sem disparar autosave/contagem espúrios.
-        Útil ao trocar de capítulo (Etapa 3): bloqueamos os sinais
-        enquanto substituímos o conteúdo, depois atualizamos a
-        contagem manualmente uma única vez.
+        Define o texto e posiciona o cursor sem disparar autosave/contagem espúrios.
         """
         self.blockSignals(True)
         self.setPlainText(texto)
+        
+        # Posiciona o cursor na posição salva (sem ultrapassar o tamanho do texto)
         cursor = self.textCursor()
         cursor.setPosition(min(posicao_cursor, len(texto)))
         self.setTextCursor(cursor)
+        
         self.blockSignals(False)
         self._emitir_contagem(texto)
 

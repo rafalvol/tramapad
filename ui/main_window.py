@@ -43,6 +43,12 @@ class MainWindow(QMainWindow):
         acao_sair.triggered.connect(self.close)
         menu_arquivo.addAction(acao_sair)
 
+        # --- Menu Editar ---
+        menu_editar = menu_bar.addMenu("&Editar")
+
+        # --- Menu Exibir ---
+        menu_exibir = menu_bar.addMenu("E&xibir")
+
     def _setup_central_ui(self):
         # QSplitter permite redimensionar a sidebar arrastando a borda
         splitter = QSplitter(Qt.Horizontal, self)
