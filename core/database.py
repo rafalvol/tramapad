@@ -128,17 +128,18 @@ def buscar_capitulo(capitulo_id: int):
 
 def atualizar_conteudo_capitulo(capitulo_id: int, conteudo: str):
     conn = conectar()
-    conn.execute(
-        "UPDATE capitulos SET conteudo = ?, atualizado_em = ? WHERE id = ?",
-        (conteudo, agora(), capitulo_id)
-    )
-    # Busca título para manter FTS sincronizado
-    cap = conn.execute("SELECT titulo FROM capitulos WHERE id = ?", (capitulo_id,)).fetchone()
-    conn.commit()
-    conn.close()
-
-    if cap:
-        sync_fts_capitulo(capitulo_id, cap["titulo"], conteudo)
+    try:
+        conn.execute(
+            "UPDATE capitulos SET conteudo = ?, atualizado_em = ? WHERE id = ?",
+            (conteudo, agora(), capitulo_id)
+        )
+        # Busca título para manter FTS sincronizado, na MESMA transação
+        cap = conn.execute("SELECT titulo FROM capitulos WHERE id = ?", (capitulo_id,)).fetchone()
+        if cap:
+            sync_fts_capitulo(capitulo_id, cap["titulo"], conteudo, conn=conn)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def obter_ou_criar_capitulo_padrao() -> int:
@@ -222,18 +223,29 @@ def set_config(chave: str, valor: str):
     conn.commit()
     conn.close()
 
-def sync_fts_capitulo(capitulo_id: int, titulo: str, conteudo: str):
-    """Atualiza o índice FTS5 do capítulo."""
-    conn = conectar()
+def sync_fts_capitulo(capitulo_id: int, titulo: str, conteudo: str, conn=None):
+    """
+    Atualiza o índice FTS5 do capítulo.
+
+    Se 'conn' for passada, reaproveita essa conexão e NÃO faz commit/close
+    (quem chamou é responsável por isso — permite unir esta operação a
+    outras na mesma transação). Se 'conn' não for passada, abre e fecha
+    sua própria conexão, como antes.
+    """
+    conexao_propria = conn is None
+    if conexao_propria:
+        conn = conectar()
     try:
         conn.execute("DELETE FROM capitulos_fts WHERE rowid = ?", (capitulo_id,))
         conn.execute(
             "INSERT INTO capitulos_fts(rowid, titulo, conteudo) VALUES (?, ?, ?)",
             (capitulo_id, titulo, conteudo)
         )
-        conn.commit()
+        if conexao_propria:
+            conn.commit()
     finally:
-        conn.close()
+        if conexao_propria:
+            conn.close()
 
 def busca_global_fts(projeto_id: int, termo: str):
     """
