@@ -69,5 +69,11 @@ class EditorWidget(QPlainTextEdit):
         """
         self.blockSignals(True)
         self.setPlainText(texto)
+        cursor = self.textCursor()
+        cursor.setPosition(min(posicao_cursor, len(texto)))
+        self.setTextCursor(cursor)
         self.blockSignals(False)
         self._emitir_contagem(texto)
+
+    def obter_posicao_cursor(self) -> int:
+        return self.textCursor().position()

@@ -85,6 +85,21 @@ def listar_projetos():
     conn.close()
     return linhas
 
+def renomear_projeto(projeto_id: int, novo_nome: str):
+    conn = conectar()
+    conn.execute(
+        "UPDATE projetos SET nome = ?, atualizado_em = ? WHERE id = ?",
+        (novo_nome, agora(), projeto_id)
+    )
+    conn.commit()
+    conn.close()
+
+def excluir_projeto(projeto_id: int):
+    conn = conectar()
+    # Devido ao ON DELETE CASCADE configurado, isso removerá também os capítulos do projeto
+    conn.execute("DELETE FROM projetos WHERE id = ?", (projeto_id,))
+    conn.commit()
+    conn.close()
 
 # ---------- Helpers básicos de capítulo (CRUD mínimo, expandido na Etapa 3) ----------
 
@@ -140,8 +155,51 @@ def obter_ou_criar_capitulo_padrao() -> int:
     projeto_id = criar_projeto("Sem título")
     return criar_capitulo(projeto_id, "Capítulo 1", ordem=0)
 
+def renomear_capitulo(capitulo_id: int, novo_titulo: str):
+    conn = conectar()
+    conn.execute(
+        "UPDATE capitulos SET titulo = ?, atualizado_em = ? WHERE id = ?",
+        (novo_titulo, agora(), capitulo_id)
+    )
+    conn.commit()
+    conn.close()
+
+def excluir_capitulo(capitulo_id: int):
+    conn = conectar()
+    conn.execute("DELETE FROM capitulos WHERE id = ?", (capitulo_id,))
+    conn.commit()
+    conn.close()
+
+def reordenar_capitulos(ordens: list[tuple[int, int]]):
+    """Recebe uma lista de tuplas (capitulo_id, nova_ordem)."""
+    conn = conectar()
+    cursor = conn.cursor()
+    ts = agora()
+    for cap_id, ordem in ordens:
+        cursor.execute(
+            "UPDATE capitulos SET ordem = ?, atualizado_em = ? WHERE id = ?",
+            (ordem, ts, cap_id)
+        )
+    conn.commit()
+    conn.close()
+
+def listar_capitulos_do_projeto(projeto_id: int):
+    conn = conectar()
+    linhas = conn.execute(
+        "SELECT * FROM capitulos WHERE projeto_id = ? ORDER BY ordem ASC, id ASC",
+        (projeto_id,)
+    ).fetchall()
+    conn.close()
+    return linhas
 
 # ---------- Helpers básicos de config ----------
+
+def salvar_posicao_cursor(capitulo_id: int, posicao: int):
+    set_config(f"cursor_capitulo_{capitulo_id}", str(posicao))
+
+def obter_posicao_cursor(capitulo_id: int) -> int:
+    pos = get_config(f"cursor_capitulo_{capitulo_id}", "0")
+    return int(pos) if pos.isdigit() else 0
 
 def get_config(chave: str, padrao=None):
     conn = conectar()
