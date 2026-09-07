@@ -1,12 +1,13 @@
-from PySide6.QtCore import QTimer, QPropertyAnimation, QEasingCurve
-from PySide6.QtWidgets import QMainWindow, QLabel, QStatusBar, QGraphicsOpacityEffect, QSplitter
-from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, QPropertyAnimation, QEasingCurve, Qt
+from PySide6.QtWidgets import QMainWindow, QLabel, QStatusBar, QGraphicsOpacityEffect, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 
 import core.database as db
 from core.autosave import AutosaveManager
 from ui.editor_widget import EditorWidget
 from ui.sidebar import SidebarWidget
+from ui.search_bar import LocalSearchBar
+from ui.search_dialog import GlobalSearchDialog
 
 
 class MainWindow(QMainWindow):
@@ -22,6 +23,7 @@ class MainWindow(QMainWindow):
         self._criar_menu()
         self._setup_central_ui()
         self._criar_status_bar()
+        self._configurar_atalhos()
         self._conectar_sinais()
 
         self._restaurar_sessao_inicial()
@@ -29,6 +31,7 @@ class MainWindow(QMainWindow):
     def _criar_menu(self):
         menu_bar = self.menuBar()
 
+        # --- Menu Arquivo ---
         menu_arquivo = menu_bar.addMenu("&Arquivo")
 
         acao_novo_projeto = QAction("Novo Projeto", self)
@@ -46,22 +49,66 @@ class MainWindow(QMainWindow):
         # --- Menu Editar ---
         menu_editar = menu_bar.addMenu("&Editar")
 
+        acao_buscar_local = QAction("Buscar no Capítulo", self)
+        acao_buscar_local.setShortcut("Ctrl+F")
+        acao_buscar_local.triggered.connect(self._abrir_busca_local)
+        menu_editar.addAction(acao_buscar_local)
+
+        acao_buscar_global = QAction("Buscar no Projeto...", self)
+        acao_buscar_global.setShortcut("Ctrl+Shift+F")
+        acao_buscar_global.triggered.connect(self._abrir_busca_global)
+        menu_editar.addAction(acao_buscar_global)
+
         # --- Menu Exibir ---
         menu_exibir = menu_bar.addMenu("E&xibir")
 
     def _setup_central_ui(self):
-        # QSplitter permite redimensionar a sidebar arrastando a borda
         splitter = QSplitter(Qt.Horizontal, self)
-        
+
         self.sidebar = SidebarWidget(self)
+        
+        # Container do lado direito para empilhar o Editor e a Barra Local de Pesquisa
+        editor_container = QWidget(self)
+        editor_layout = QVBoxLayout(editor_container)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(0)
+
         self.editor = EditorWidget(self)
+        self.search_bar = LocalSearchBar(self.editor, self)
+        self.search_bar.hide()
+
+        editor_layout.addWidget(self.editor, stretch=1)
+        editor_layout.addWidget(self.search_bar, stretch=0)
 
         splitter.addWidget(self.sidebar)
-        splitter.addWidget(self.editor)
+        splitter.addWidget(editor_container)
         splitter.setStretchFactor(1, 1)
 
         self.setCentralWidget(splitter)
         self.autosave = AutosaveManager(capitulo_id=-1, parent=self)
+
+    def _configurar_atalhos(self):
+        shortcut_f = QShortcut(QKeySequence("Ctrl+F"), self)
+        shortcut_f.activated.connect(self._abrir_busca_local)
+
+        shortcut_global_f = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        shortcut_global_f.activated.connect(self._abrir_busca_global)
+
+    def _abrir_busca_local(self):
+        self.search_bar.abrir()
+
+    def _abrir_busca_global(self):
+        if not self.projeto_atual_id:
+            return
+        dialog = GlobalSearchDialog(self.projeto_atual_id, self)
+        dialog.resultadoSelecionado.connect(self._on_resultado_busca_global)
+        dialog.exec_()
+
+    def _on_resultado_busca_global(self, capitulo_id: int, termo: str):
+        self.sidebar.recarregar_arvore(selecionar_capitulo_id=capitulo_id)
+        self.search_bar.abrir()
+        self.search_bar.input_busca.setText(termo)
+        self.search_bar.buscar()
 
     def _criar_status_bar(self):
         status = QStatusBar()
@@ -92,7 +139,6 @@ class MainWindow(QMainWindow):
         self.sidebar.capituloSelecionado.connect(self._abrir_capitulo)
 
     def _restaurar_sessao_inicial(self):
-        # Tenta carregar o último capítulo aberto salvo na tabela 'config'
         ultimo_cap_id = db.get_config("ultimo_capitulo_aberto")
         
         if ultimo_cap_id and ultimo_cap_id.isdigit():
@@ -101,7 +147,6 @@ class MainWindow(QMainWindow):
                 self.sidebar.recarregar_arvore(selecionar_capitulo_id=cap["id"])
                 return
 
-        # Fallback: garante que haja pelo menos 1 capítulo
         cap_id = db.obter_ou_criar_capitulo_padrao()
         self.sidebar.recarregar_arvore(selecionar_capitulo_id=cap_id)
 
@@ -109,7 +154,6 @@ class MainWindow(QMainWindow):
         if self.capitulo_atual_id == capitulo_id:
             return
 
-        # Salva o estado do capítulo atual antes de realizar a troca
         if self.capitulo_atual_id is not None:
             db.salvar_posicao_cursor(self.capitulo_atual_id, self.editor.obter_posicao_cursor())
             self.autosave.trocar_capitulo(capitulo_id)
@@ -119,19 +163,19 @@ class MainWindow(QMainWindow):
         self.capitulo_atual_id = capitulo_id
         self.projeto_atual_id = projeto_id
 
-        # Atualiza a sessão no banco
         db.set_config("ultimo_capitulo_aberto", str(capitulo_id))
         db.set_config(f"ultimo_capitulo_projeto_{projeto_id}", str(capitulo_id))
 
-        # Carrega o capítulo e restaura o cursor
         capitulo = db.buscar_capitulo(capitulo_id)
         conteudo = capitulo["conteudo"] if capitulo else ""
         posicao_cursor = db.obter_posicao_cursor(capitulo_id)
         
         self.editor.carregar_conteudo(conteudo, posicao_cursor)
 
+        if self.search_bar.isVisible():
+            self.search_bar.buscar()
+
     def closeEvent(self, event):
-        # Salva o cursor e força flushing do autosave antes de encerrar
         if self.capitulo_atual_id is not None:
             db.salvar_posicao_cursor(self.capitulo_atual_id, self.editor.obter_posicao_cursor())
             if self.autosave._timer.isActive():

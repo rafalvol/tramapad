@@ -34,12 +34,12 @@ class AutosaveManager(QObject):
         self._timer.start(self.DEBOUNCE_MS)
 
     def _salvar_agora(self):
-        if self._conteudo_pendente is None:
-            return
-        self.statusChanged.emit("salvando")
-        atualizar_conteudo_capitulo(self.capitulo_id, self._conteudo_pendente)
-        self._conteudo_pendente = None
-        self.statusChanged.emit("salvo")
+            if self._conteudo_pendente is None or self.capitulo_id is None or self.capitulo_id <= 0:
+                return
+            self.statusChanged.emit("salvando")
+            atualizar_conteudo_capitulo(self.capitulo_id, self._conteudo_pendente)
+            self._conteudo_pendente = None
+            self.statusChanged.emit("salvo")
 
     def trocar_capitulo(self, novo_capitulo_id: int):
         """

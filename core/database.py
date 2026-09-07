@@ -127,14 +127,18 @@ def buscar_capitulo(capitulo_id: int):
 
 
 def atualizar_conteudo_capitulo(capitulo_id: int, conteudo: str):
-    """Usado pelo AutosaveManager a cada disparo do debounce."""
     conn = conectar()
     conn.execute(
         "UPDATE capitulos SET conteudo = ?, atualizado_em = ? WHERE id = ?",
         (conteudo, agora(), capitulo_id)
     )
+    # Busca título para manter FTS sincronizado
+    cap = conn.execute("SELECT titulo FROM capitulos WHERE id = ?", (capitulo_id,)).fetchone()
     conn.commit()
     conn.close()
+
+    if cap:
+        sync_fts_capitulo(capitulo_id, cap["titulo"], conteudo)
 
 
 def obter_ou_criar_capitulo_padrao() -> int:
@@ -217,3 +221,64 @@ def set_config(chave: str, valor: str):
     )
     conn.commit()
     conn.close()
+
+def sync_fts_capitulo(capitulo_id: int, titulo: str, conteudo: str):
+    """Atualiza o índice FTS5 do capítulo."""
+    conn = conectar()
+    try:
+        conn.execute("DELETE FROM capitulos_fts WHERE rowid = ?", (capitulo_id,))
+        conn.execute(
+            "INSERT INTO capitulos_fts(rowid, titulo, conteudo) VALUES (?, ?, ?)",
+            (capitulo_id, titulo, conteudo)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def busca_global_fts(projeto_id: int, termo: str):
+    """
+    Realiza busca full-text nos capítulos do projeto informado usando FTS5 snippet.
+    """
+    if not termo.strip():
+        return []
+    
+    conn = conectar()
+    query = """
+        SELECT 
+            c.id AS capitulo_id,
+            c.titulo AS capitulo_titulo,
+            snippet(capitulos_fts, 1, '<b>', '</b>', '...', 12) AS trecho
+        FROM capitulos_fts fts
+        JOIN capitulos c ON c.id = fts.rowid
+        WHERE c.projeto_id = ? AND capitulos_fts MATCH ?
+        ORDER BY rank
+    """
+    
+    # Tratamento de aspas simples/duplas para evitar erro de sintaxe
+    termo_escapado = termo.replace('"', '""')
+    termo_fts = f'"{termo_escapado}"*'
+    
+    try:
+        resultados = conn.execute(query, (projeto_id, termo_fts)).fetchall()
+    except sqlite3.OperationalError:
+        query_fallback = """
+            SELECT id AS capitulo_id, titulo AS capitulo_titulo, conteudo AS trecho
+            FROM capitulos
+            WHERE projeto_id = ? AND (conteudo LIKE ? OR titulo LIKE ?)
+        """
+        like_term = f"%{termo}%"
+        linhas = conn.execute(query_fallback, (projeto_id, like_term, like_term)).fetchall()
+        resultados = []
+        for l in linhas:
+            pos = l["trecho"].lower().find(termo.lower())
+            inicio = max(0, pos - 20)
+            fim = min(len(l["trecho"]), pos + len(termo) + 20)
+            snippet = l["trecho"][inicio:fim]
+            resultados.append({
+                "capitulo_id": l["capitulo_id"],
+                "capitulo_titulo": l["capitulo_titulo"],
+                "trecho": f"...{snippet}..."
+            })
+            
+    conn.close()
+    return resultados
